@@ -1,0 +1,322 @@
+---
+title: "Testing Automated Reporting"
+format: html
+editor: visual
+toc: true
+---
+
+# Info about the dataset
+
+Data has been retrieved from [kaggle](https://www.kaggle.com/datasets/nelgiriyewithana/most-streamed-spotify-songs-2024/data).
+
+The dataset description is reported below:
+
+-   **Track Name**: Name of the song.
+
+-   **Album Name**: Name of the album the song belongs to.
+
+-   **Artist**: Name of the artist(s) of the song.
+
+-   **Release Date**: Date when the song was released.
+
+-   **ISRC**: International Standard Recording Code for the song.
+
+-   **All Time Rank**: Ranking of the song based on its all-time popularity.
+
+-   **Track Score**: Score assigned to the track based on various factors.
+
+-   **Spotify Streams**: Total number of streams on Spotify.
+
+-   **Spotify Playlist Count**: Number of Spotify playlists the song is included in.
+
+-   **Spotify Playlist Reach**: Reach of the song across Spotify playlists.
+
+-   **Spotify Popularity**: Popularity score of the song on Spotify.
+
+-   **YouTube Views**: Total views of the song's official video on YouTube.
+
+-   **YouTube Likes**: Total likes on the song's official video on YouTube.
+
+-   **TikTok Posts**: Number of TikTok posts featuring the song.
+
+-   **TikTok Likes**: Total likes on TikTok posts featuring the song.
+
+-   **TikTok Views**: Total views on TikTok posts featuring the song.
+
+-   **YouTube Playlist Reach**: Reach of the song across YouTube playlists.
+
+-   **Apple Music Playlist Count**: Number of Apple Music playlists the song is included in.
+
+-   **AirPlay Spins**: Number of times the song has been played on radio stations.
+
+-   **SiriusXM Spins**: Number of times the song has been played on SiriusXM.
+
+-   **Deezer Playlist Count**: Number of Deezer playlists the song is included in.
+
+-   **Deezer Playlist Reach**: Reach of the song across Deezer playlists.
+
+-   **Amazon Playlist Count**: Number of Amazon Music playlists the song is included in.
+
+-   **Pandora Streams**: Total number of streams on Pandora.
+
+-   **Pandora Track Stations**: Number of Pandora stations featuring the song.
+
+-   **Soundcloud Streams**: Total number of streams on Soundcloud.
+
+-   **Shazam Counts**: Total number of times the song has been Shazamed.
+
+-   **TIDAL Popularity**: Popularity score of the song on TIDAL.
+
+-   **Explicit Track**: Indicates whether the song contains explicit content.
+
+This is a test to check some of the functionality integrated to be integrated in a possible version of an automated report for **Spotify**!
+
+# Creating the R and Python environments using `renv` and `venv`
+
+The environment is created before loading any package and is stored in the file *build-env.R*.
+
+Similarly, python dependencies have been "frozen" into a `requirements.txt` file.
+
+```{r, include=FALSE}
+library(pacman)
+p_load(tidyverse, arrow, duckdb, fs, DBI, glue, janitor, ggplot2, ggthemes, visdat, UpSetR, naniar)
+
+#options(scipen = 999)
+options(scipen = 0)
+```
+
+# Using R to create a parquet file
+
+::: callout-note
+This section should be executed only the first time to generate the parquet file, then we can just query that file using the opened connection to the database to extract and load only the necessary data in memory.
+:::
+
+```{r, warning=FALSE}
+df <- read_csv("data/raw/2024_spotify-most-streamed.csv")
+```
+
+```{r}
+df_cleaned <- janitor::clean_names(df)
+```
+
+```{r}
+dir_out <- "data/parquet/"
+```
+
+```{r}
+arrow::write_dataset(df_cleaned, dir_out, partitioning = "spotify_popularity")
+```
+
+## Accessing and querying the parquet files using SQL and DuckDB
+
+```{r}
+dir_out <- "data/parquet/"
+```
+
+```{r}
+ds <- open_dataset(dir_out, partitioning = "spotify_popularity")
+
+con <- dbConnect(duckdb())
+
+duckdb_register_arrow(con, "spotify_artists", ds)
+
+df_very_popular <- dbGetQuery(con,
+           "SELECT *
+           FROM spotify_artists
+           WHERE spotify_popularity >= 70")
+
+df_not_popular <- dbGetQuery(con,
+           "SELECT *
+           FROM spotify_artists
+           WHERE spotify_popularity < 70")
+```
+
+```{r}
+duckdb_unregister(con, "spotify_artists")
+dbDisconnect(con)
+```
+
+This ensures that after querying we disconnect and close the connection to the database.
+
+# Visualizing the data
+
+We can first check the structure of the dataset to make sure that the type of every variable is consistent with what they are supposed to represent.
+
+```{r}
+str(df_very_popular)
+```
+
+We learn that the column `tidal_popularity` is full of empty values, so we should drop it from the dataset. Also, `release_date` is not properly initialized as a `date` object, so it would be useful to convert it into one.
+
+```{r}
+df_cleaned_pop <- df_very_popular %>%
+  select(-tidal_popularity) %>%
+  mutate(release_date = mdy(release_date))
+```
+
+Let's say we want to try to understand the popularity of a track on Spotify based on the number of likes it got. First let's visualize the most popular artists
+
+```{r}
+spotify_green <- "#1DB954"
+```
+
+```{r}
+df_cleaned_pop %>%
+  group_by(artist) %>%
+  summarise(count = dplyr::n()) %>%
+  arrange(desc(count)) %>%
+  head(5) %>%
+  ggplot(aes(x = artist)) +
+    geom_col(aes(y = count), color = "black", fill = spotify_green) +
+    #stat_summary(aes(y = stat_identity(count))) +
+    labs(x = "Artist", y = "Number of Popular Tracks (2024)",
+         title = "Top 5") +
+    theme_clean() +
+    theme(plot.title = element_text(hjust = .5, size = 18, color = spotify_green),
+          axis.title.x = element_text(face = "bold"))
+```
+
+Now we might be interested in knowing from which year are the tracks contained in the dataset. We can observe the distribution using another barplot
+
+```{r}
+df_cleaned_pop %>%
+  mutate(release_year = year(release_date)) %>%
+  group_by(release_year) %>%
+  summarize(count = n()) %>%
+  ggplot(aes(x = release_year)) +
+    geom_col(aes(y = count), color = "black", fill = spotify_green) +
+    #stat_summary(aes(y = stat_identity(count))) +
+    labs(x = "Year", y = "Number of Popular Tracks (2024)",
+         title = "Distribution of Release Year") +
+    theme_clean() +
+    theme(plot.title = element_text(hjust = .5, size = 18, color = spotify_green),
+          axis.title.x = element_text(face = "bold"))
+  
+```
+
+Most of the popular songs are from 2023 and 2024, although there are a few outliers coming from the late 80s and early 90s. At this point one might be interested in understanding if the appearance of these songs on the chart is associated to the number of likes they received on social media platforms (e.g., TikTok & Instagram). Luckily, we also have this kind of data, so we can check how these two groups differ on the number of likes they received on social media.
+
+```{r, warning = FALSE}
+df_cleaned_pop %>%
+  mutate(period = ifelse(year(release_date) <= 2010, "old", "recent")) %>%
+  ggplot(aes(x = period, y = tik_tok_likes)) +
+  geom_boxplot(color = "black", fill = spotify_green) +
+  labs(x = "Year", y = "Number of TikTok Likes (2024)",
+         title = "TikTok Likes by Period") +
+    theme_clean() +
+    theme(plot.title = element_text(hjust = .5, size = 18, color = spotify_green),
+          axis.title.x = element_text(face = "bold"))
+```
+
+```{r, warning=FALSE}
+df_cleaned_pop %>%
+  mutate(period = ifelse(year(release_date) <= 2010, "old", "recent")) %>%
+  ggplot(aes(x = period, y = you_tube_likes)) +
+  geom_boxplot(color = "black", fill = spotify_green) +
+  labs(x = "Year", y = "Number of YouTube Likes (2024)",
+         title = "YouTube Likes by Period") +
+    theme_clean() +
+    theme(plot.title = element_text(hjust = .5, size = 18, color = spotify_green),
+          axis.title.x = element_text(face = "bold"))
+```
+
+However, there are many missing values for the TikTok category and so it is difficult to make a fair comparison. Also, YouTube has been around for much longer compared to TikTok so it makes sense that older songs gathered more likes throughout the years. Interestingly, among the old songs there is just one outlier in the YouTube category compared to the many in the TikTok group.
+
+```{r}
+df_cleaned_pop %>%
+  mutate(period = ifelse(year(release_date) <= 2010, "old", "recent")) %>%
+  select(tik_tok_likes, you_tube_likes) %>%
+  vis_miss()
+```
+
+::: {.content-visible when-format="html"}
+```{python}
+import pyarrow.dataset as ds
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+
+pio.renderers.default = "plotly_mimetype+notebook_connected"
+
+df = ds.dataset("data/parquet", format="parquet").to_table().drop(["artist", "album_name", "track"]).to_pandas()
+
+#print(df)
+
+#df = pd.read_csv("~/Desktop/Projects/R_projects/test_reporting/data/raw/2024_spotify-most-streamed.csv")
+
+fig = px.scatter(df, x="you_tube_views", y="you_tube_likes",
+                 marginal_y="violin", marginal_x="violin", 
+                 trendline="ols", template="simple_white",
+                 title = "YouTube Likes as a function of Views",
+                 labels = {"you_tube_views":"YT Views", "you_tube_likes":"YT Likes"})
+fig.show()
+```
+
+```{python}
+fig = px.scatter(df, x="tik_tok_views", y="tik_tok_likes",
+                 marginal_y="violin", marginal_x="violin", 
+                 trendline="ols", template="simple_white",
+                 title = "TikTok Likes as a function of Views",
+                 labels = {"tik_tok_views":"TikTok Views", "tik_tok_likes":"TikTok Likes"})
+fig.show()
+```
+
+From the two plots above we learn that the YouTube views only explain about 70% ($R^2$ = .6954) of the total variation in YouTube likes, whereas TikTok views are a strong correlate of TikTok likes ending up explaining 98% of their total variation.
+:::
+
+# Data Modeling
+
+We now delve deeper into the statistical associations between the different variables in the dataset by fitting a linear model.
+
+```{r}
+yt_lm <- lm(you_tube_likes ~ you_tube_views, data = df_cleaned)
+summary(yt_lm)
+```
+
+```{r}
+par(mfrow = c(2,2))
+plot(yt_lm)
+```
+
+This time we learn much more from the diagnostics of the residuals of the model. Importantly, the errors do not have a mean of zero and show significant departures from the assumption of normality (as can be seen in the top-right plot). More importantly, also the assumption of equal error variance is violated. In the bottom-right plot, we also see that there are some outliers whose presence is greatly affecting the estimated regression coefficients.
+
+```{r, include=FALSE}
+outliers <- boxplot(df_cleaned$you_tube_likes, ylab = "YT Likes")$out
+df_cleaned_no_out <- df_cleaned[-which(df_cleaned$you_tube_likes %in% outliers | is.na(df_cleaned$you_tube_likes)),]
+```
+
+```{r, include = FALSE}
+#outliers <- boxplot(df_cleaned$you_tube_likes, ylab = "YT Likes")$out
+#df_cleaned_no_out <- df_cleaned[-which(df_cleaned$you_tube_likes %in% outliers | is.na(df_cleaned$you_tube_likes)),]
+yt_lm_no_out <- lm(you_tube_likes ~ you_tube_views, data = df_cleaned_no_out)
+summary(yt_lm)
+```
+
+# Conclusion
+
+This document is a streamlined example of how it is possible to produce automatic reports in different formats starting from a single and connected quarto document file. The main features of this automatic report are:
+
+1.  connection and retrieval of data from parquet files or any other instances of SQL databases.
+2.  data cleaning and pre-processing.
+3.  up-to-date data visualization processes that ensure that the most relevant plots are generated from the most recent data.
+4.  up-to-date data modeling processes that automatically update their parameters based on the new data they receive.
+
+::: callout-important
+This document should not be viewed as a final and finished product as some aspects of the data management and engineering process were not discussed (e.g., data integrity, patterns in data missingness, advanced handling of outliers, etc.)
+
+View this document as an example of the impact that an automatic report can have on the reporting process in a corporate setting.
+:::
+
+# Resources
+
+Apache Software Foundation, “Tabular Datasets — Apache Arrow v19.0.0.” Accessed: Feb. 01, 2025. \[Online\]. Available: <https://arrow.apache.org/docs/python/dataset.html#dataset>
+
+Nicholas Tierney, *Exploring patterns with UpSetR*. Accessed: Feb. 01, 2025. \[Online\]. Available: <https://cran.r-project.org/web/packages/naniar/vignettes/naniar-visualisation.html>
+
+Nicholas Tierney, Di Cook, Miles McBain, and Colin Fay, “Plot the pattern of missingness using an upset plot. — gg_miss_upset.” Accessed: Feb. 01, 2025. \[Online\]. Available: <https://naniar.njtierney.com/reference/gg_miss_upset.html>
+
+NIDULA ELGIRIYEWITHANA, “Most Streamed Spotify Songs 2024.” Accessed: Feb. 01, 2025. \[Online\]. Available: <https://www.kaggle.com/datasets/nelgiriyewithana/most-streamed-spotify-songs-2024>
+
+Rich Pauloo, “Parquet, SQL, DuckDB, arrow, dbplyr and R,” Rich Pauloo. Accessed: Feb. 01, 2025. \[Online\]. Available: <https://www.richpauloo.com/blog/parquet/>
+
+P. Team, “Building a reporting infrastructure with Quarto,” Posit. Accessed: Feb. 01, 2025. \[Online\]. Available: <https://posit.co/blog/building-a-reporting-infrastructure-with-quarto/>

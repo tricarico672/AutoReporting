@@ -1,0 +1,1 @@
+"0","df_cleaned_no_out <- df_cleaned[-which(df_cleaned$you_tube_likes %in% outliers | is.na(df_cleaned$you_tube_likes)),]"
