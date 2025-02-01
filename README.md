@@ -1,7 +1,7 @@
 # Aim of the repository
 This repository was created to show the impact that an automated reporting process can have on improving overall reporting efficiency.
 To automate the reporting process, I decided to use Quarto publishing capabilities to render a single Quarto document in multiple formats by running a simple shell script that can be executed directly from the CLI.
-The dataset used for the analysis was first converted into a parquet format and then it was queried, using SQL integrations inside R, to load only the necessary data in memory.
+The dataset used for the analysis was first converted into a parquet format and then it was queried, using SQL integrations inside R and Python, to load only the necessary data in memory.
 This was also done to show that data can be retrieved from any SQL-like database in order to update the report automatically, thus making the process very efficient.
 Additionally, the fact that different outputs can be rendered from a single Quarto document makes this approach even more useful.
 
