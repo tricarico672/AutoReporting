@@ -1,3 +1,8 @@
 project:
-  type: default
-  output-dir: "output"
+  output-dir: "output"  # Keeps generated files in a separate folder
+
+format:
+  pdf:
+    documentclass: article  # Customize for book, report, etc.
+  html:
+    self-contained: true  # Ensures all assets are embedded (good for Netlify)
