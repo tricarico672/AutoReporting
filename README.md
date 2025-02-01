@@ -7,4 +7,5 @@ Additionally, the fact that different outputs can be rendered from a single Quar
 
 # Outputs of the repository
 The rendered outputs have been generated running render_script.sh
-The shell script renders two outputs: one HTML file and one PDF file. The HTML file is an interactive report that includes additional data visualization methods compared to the static PDF.
+The shell script renders two outputs - one HTML file and one PDF file. The HTML file is an interactive report that includes additional data visualization methods compared to the static PDF.
+It is possible to view the HTML website using the link available in the details of the repository (https://tricarico672.github.io/AutoReporting/2024-01-31_test-automated-reporting-spotify.html)
